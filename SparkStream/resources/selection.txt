@@ -8,3 +8,10 @@ twittersentimentdemo
 bigdata
 onmetal
 cloudbigdata
+nba
+lebron
+kobe
+james
+bryant
+mamba
+thisisuniqwordhehe

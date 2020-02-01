@@ -22,10 +22,26 @@
 
 package com.rackspace.spark;
 
+import java.io.IOException;
+import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Set;
 
+import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.hbase.HBaseConfiguration;
+import org.apache.hadoop.hbase.HColumnDescriptor;
+import org.apache.hadoop.hbase.HTableDescriptor;
+import org.apache.hadoop.hbase.TableName;
+import org.apache.hadoop.hbase.client.Admin;
+import org.apache.hadoop.hbase.client.Connection;
+import org.apache.hadoop.hbase.client.ConnectionFactory;
+import org.apache.hadoop.hbase.client.Get;
+import org.apache.hadoop.hbase.client.Put;
+import org.apache.hadoop.hbase.client.Result;
+import org.apache.hadoop.hbase.client.Table;
+import org.apache.hadoop.hbase.util.Bytes;
 import org.apache.log4j.Level;
 import org.apache.log4j.Logger;
 import org.apache.spark.SparkConf;
@@ -33,6 +49,7 @@ import org.apache.spark.api.java.JavaRDD;
 import org.apache.spark.api.java.function.Function;
 import org.apache.spark.api.java.function.Function2;
 import org.apache.spark.api.java.function.PairFunction;
+import org.apache.spark.api.java.function.VoidFunction;
 import org.apache.spark.streaming.Duration;
 import org.apache.spark.streaming.Time;
 import org.apache.spark.streaming.api.java.JavaDStream;
@@ -80,6 +97,8 @@ public class TwitterSentiment {
 		Logger.getLogger("org.apache.spark.storage.BlockManager").setLevel(
 				Level.ERROR);
 	}
+	private static final String TABLE_NAME = "tweet";
+	private static final String CF_DETAIL = "tweet_detail";
 
 	public static void main(String[] args) {
 		SparkConf conf = new SparkConf()
@@ -123,10 +142,10 @@ public class TwitterSentiment {
 					public Boolean call(Tuple2<Long, String> tweet) {
 						if (tweet != null && !tweet._2().isEmpty()
 								&& tweet._1() != null) {
-							for (String key : keywords) {
-								if (tweet._2().contains(key))
-									return true;
-							}
+							// for (String key : keywords) {
+							// if (tweet._2().contains(key))
+							return true;
+							// }
 						}
 						return false;
 					}
@@ -256,8 +275,137 @@ public class TwitterSentiment {
 			}
 		});
 
+		result.foreachRDD(
+
+		new Function<JavaRDD<Tuple5<Long, String, Float, Float, String>>, Void>() {
+
+			public Void call(
+					JavaRDD<Tuple5<Long, String, Float, Float, String>> rdd)
+					throws Exception {
+
+				rdd.foreachPartition(
+
+				new VoidFunction<Iterator<Tuple5<Long, String, Float, Float, String>>>() {
+
+					public void call(
+							Iterator<Tuple5<Long, String, Float, Float, String>> iterator)
+							throws Exception {
+
+						hBaseWriter(iterator, "tweet_detail");
+
+					}
+
+				}
+
+				);
+
+				return null;
+
+			}
+
+		}
+
+		);
+
 		result.print();
 		ssc.start();
 		ssc.awaitTermination();
+	}
+
+	private static void hBaseWriter(
+			Iterator<Tuple5<Long, String, Float, Float, String>> iterator,
+			String columnFamily) throws IOException {
+
+		Configuration conf = HBaseConfiguration.create();
+
+		Connection connection = null;
+
+		Table table = null;
+
+		try {
+
+			connection = ConnectionFactory.createConnection(conf);
+
+			Admin admin = connection.getAdmin();
+			HTableDescriptor tablee = new HTableDescriptor(
+					TableName.valueOf(TABLE_NAME));
+			tablee.addFamily(new HColumnDescriptor(CF_DETAIL));
+
+			System.out.print("Creating table.... ");
+
+			if (!admin.tableExists(tablee.getTableName())) {
+				admin.createTable(tablee);
+			}
+
+			System.out.println(" Done!");
+
+			table = connection.getTable(TableName.valueOf(TABLE_NAME));
+
+			List<Get> rowList = new ArrayList<Get>();
+
+			while (iterator.hasNext()) {
+
+				Get get = new Get(iterator.next()._2().getBytes());
+
+				rowList.add(get);
+
+			}
+
+			// Obtain data from table1.
+			Result[] resultDataBuffer = table.get(rowList);
+
+			// Configure data of table1.
+			List<Put> putList = new ArrayList<Put>();
+
+			for (int i = 0; i < resultDataBuffer.length; i++) {
+
+				String row = new String(rowList.get(i).getRow());
+
+				Result resultData = resultDataBuffer[i];
+
+				if (!resultData.isEmpty()) {
+					// Obtain the old value based on the cluster family and //
+					// cloumn.
+					String aCid = Bytes.toString(resultData.getValue(
+							columnFamily.getBytes(), "cid".getBytes()));
+
+					Put put = new Put(Bytes.toBytes(row));
+
+					// Calculation reslut
+					int resultValue = Integer.valueOf(row)
+							+ Integer.valueOf(aCid);
+
+					put.addColumn(Bytes.toBytes(columnFamily),
+							Bytes.toBytes("cid"),
+							Bytes.toBytes(String.valueOf(resultValue)));
+
+					putList.add(put);
+				}
+			}
+
+			if (putList.size() > 0) {
+				table.put(putList);
+			}
+
+		} catch (IOException e) {
+			e.printStackTrace();
+		} finally {
+			if (table != null) {
+				try {
+					table.close();
+				} catch (IOException e) {
+					e.printStackTrace();
+				}
+			}
+
+			if (connection != null) {
+				try {
+					// Close the Hbase connection.
+					connection.close();
+				} catch (IOException e) {
+					e.printStackTrace();
+				}
+			}
+		}
 	}
 }
