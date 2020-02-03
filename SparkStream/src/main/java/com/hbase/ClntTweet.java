@@ -1,14 +1,12 @@
 package com.hbase;
 
-import java.util.Date;
-
 public class ClntTweet {
 
 	Long id;
 
 	String username;
 
-	Date createdAt;
+	String createdAt;
 
 	String tweetContent;
 
@@ -30,11 +28,11 @@ public class ClntTweet {
 		this.username = username;
 	}
 
-	public Date getCreatedAt() {
+	public String getCreatedAt() {
 		return createdAt;
 	}
 
-	public void setCreatedAt(Date createdAt) {
+	public void setCreatedAt(String createdAt) {
 		this.createdAt = createdAt;
 	}
 
