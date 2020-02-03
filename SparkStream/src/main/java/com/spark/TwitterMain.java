@@ -133,38 +133,32 @@ public class TwitterMain {
 
 			Tuple5<Long, String, String, String, String> item = ((Tuple5<Long, String, String, String, String>) javaR
 					.first());
-			// List<Put> lstPut = new ArrayList<Put>();
 
-			Put put = new Put(Bytes.toBytes(item._1()));
-			put.addColumn(Bytes.toBytes(CF_DETAIL), Bytes.toBytes("username"),
-					Bytes.toBytes(item._2()));
-			put.addColumn(Bytes.toBytes(CF_DETAIL), Bytes.toBytes("createdAt"),
-					Bytes.toBytes(item._3()));
-			put.addColumn(Bytes.toBytes(CF_DETAIL),
-					Bytes.toBytes("tweetContent"), Bytes.toBytes(item._4()));
-			put.addColumn(Bytes.toBytes(CF_DETAIL), Bytes.toBytes("hashTags"),
-					Bytes.toBytes(item._5()));
+			List<Put> lstPut = new ArrayList<Put>();
 
-			// lstPut.add(put);
+			javaR.collect().forEach(
+					action -> {
 
-			// javaR.foreach(f -> {
-			// Put put = new Put(Bytes.toBytes(f._1()));
-			// put.addColumn(Bytes.toBytes(CF_DETAIL),
-			// Bytes.toBytes("username"), Bytes.toBytes(f._2()));
-			// put.addColumn(Bytes.toBytes(CF_DETAIL),
-			// Bytes.toBytes("createdAt"), Bytes.toBytes(f._3()));
-			// put.addColumn(Bytes.toBytes(CF_DETAIL),
-			// Bytes.toBytes("tweetContent"), Bytes.toBytes(f._4()));
-			// put.addColumn(Bytes.toBytes(CF_DETAIL),
-			// Bytes.toBytes("hashTags"), Bytes.toBytes(f._5()));
-			//
-			// lstPut.add(put);
-			//
-			// });
+						Put put = new Put(Bytes.toBytes(action._1()));
+						put.addColumn(Bytes.toBytes(CF_DETAIL),
+								Bytes.toBytes("username"),
+								Bytes.toBytes(action._2()));
+						put.addColumn(Bytes.toBytes(CF_DETAIL),
+								Bytes.toBytes("createdAt"),
+								Bytes.toBytes(action._3()));
+						put.addColumn(Bytes.toBytes(CF_DETAIL),
+								Bytes.toBytes("tweetContent"),
+								Bytes.toBytes(action._4()));
+						put.addColumn(Bytes.toBytes(CF_DETAIL),
+								Bytes.toBytes("hashTags"),
+								Bytes.toBytes(action._5()));
 
-			// System.out.println("~~~~~~~~~~~~~~~~~~~~~~~~~~~LstPut.size: "
-			// + lstPut.size());
-			table.put(put);
+						lstPut.add(put);
+					});
+
+			System.out.println("~~~~~~~~~~~~~~~~~~~~~~~~~~~LstPut.size: "
+					+ lstPut.size());
+			table.put(lstPut);
 
 			table.close();
 
