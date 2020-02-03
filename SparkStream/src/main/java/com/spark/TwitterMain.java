@@ -28,6 +28,7 @@ import org.apache.spark.streaming.api.java.JavaStreamingContext;
 import org.apache.spark.streaming.twitter.TwitterUtils;
 
 import scala.Tuple5;
+import twitter4j.Status;
 
 import com.hbase.ClntTweet;
 
@@ -63,7 +64,8 @@ public class TwitterMain {
 		final String hdfs_output_path = "file:///home/cloudera/spark";
 
 		// Creates twitter Stream
-		JavaReceiverInputDStream stream = TwitterUtils.createStream(ssc);
+		JavaReceiverInputDStream<Status> stream = TwitterUtils
+				.createStream(ssc);
 
 		// Gets new Stream of RDD of the form (tweetId, tweetDetail)
 		JavaPairDStream<Long, ClntTweet> tweets = stream.mapToPair(
@@ -130,9 +132,6 @@ public class TwitterMain {
 			System.out.println(" Done!");
 
 			table = connection.getTable(TableName.valueOf(TABLE_NAME));
-
-			Tuple5<Long, String, String, String, String> item = ((Tuple5<Long, String, String, String, String>) javaR
-					.first());
 
 			List<Put> lstPut = new ArrayList<Put>();
 
