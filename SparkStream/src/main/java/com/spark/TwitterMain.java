@@ -2,7 +2,6 @@ package com.spark;
 
 import java.io.IOException;
 import java.util.ArrayList;
-import java.util.Date;
 import java.util.List;
 
 import org.apache.hadoop.conf.Configuration;
@@ -13,7 +12,9 @@ import org.apache.hadoop.hbase.TableName;
 import org.apache.hadoop.hbase.client.Admin;
 import org.apache.hadoop.hbase.client.Connection;
 import org.apache.hadoop.hbase.client.ConnectionFactory;
+import org.apache.hadoop.hbase.client.Get;
 import org.apache.hadoop.hbase.client.Put;
+import org.apache.hadoop.hbase.client.Result;
 import org.apache.hadoop.hbase.client.Table;
 import org.apache.hadoop.hbase.util.Bytes;
 import org.apache.log4j.Level;
@@ -41,6 +42,8 @@ public class TwitterMain {
 	}
 	private static final String TABLE_NAME = "tweet";
 	private static final String CF_DETAIL = "tweet_detail";
+	private static final String TABLE_NAME_HASH = "tweet_hash";
+	private static final String CF_HASH = "cf";
 
 	public static void main(String[] args) {
 		SparkConf conf = new SparkConf().setAppName("Team 6 Project");
@@ -48,6 +51,7 @@ public class TwitterMain {
 		if (args.length > 0)
 			conf.setMaster(args[0]);
 		else
+
 			conf.setMaster("local[2]");
 
 		JavaStreamingContext ssc = new JavaStreamingContext(conf, new Duration(
@@ -61,37 +65,24 @@ public class TwitterMain {
 				"72038826-cNFa8giK1WZE3SJS6Jxszf6sGYV920nrck3gX1fA3");
 		System.setProperty("twitter4j.oauth.accessTokenSecret",
 				"X7oiXW3WhuNCLs7mbmJhujAnnRtohT4G32lBknvm3JZk1");
-		final String hdfs_output_path = "file:///home/cloudera/spark";
 
 		// Creates twitter Stream
 		JavaReceiverInputDStream<Status> stream = TwitterUtils
 				.createStream(ssc);
 
 		// Gets new Stream of RDD of the form (tweetId, tweetDetail)
-		JavaPairDStream<Long, ClntTweet> tweets = stream.mapToPair(
+		JavaPairDStream<String, ClntTweet> tweets = stream.mapToPair(
 				new Utility()).filter(f -> f != null);
 
 		// Converting to Tuple5
-		JavaDStream<Tuple5<Long, String, String, String, String>> result = tweets
+		JavaDStream<Tuple5<String, String, String, String, String>> result = tweets
 				.map(f -> {
-					return new Tuple5<Long, String, String, String, String>(
+					return new Tuple5<String, String, String, String, String>(
 							f._1, f._2.getUsername(), f._2.getCreatedAt(), f._2
 									.getTweetContent(), f._2.getHashTags());
 				});
 
-		result.foreach(f -> {
-			if (f.count() <= 0) {
-				return null;
-			} else {
-				Date d = new Date();
-				f.saveAsTextFile(hdfs_output_path + "/twitter_data/tweet" + "_"
-						+ d.getTime());
-				return null;
-			}
-		});
-
 		result.foreachRDD(r -> {
-			System.out.println("~~~~~~~~~~~~~~~~~~~~~~~~~~~Count: " + r.count());
 			saveToHbase(r);
 			return null;
 		});
@@ -102,7 +93,7 @@ public class TwitterMain {
 	}
 
 	private static void saveToHbase(
-			JavaRDD<Tuple5<Long, String, String, String, String>> javaR)
+			JavaRDD<Tuple5<String, String, String, String, String>> javaR)
 			throws IOException {
 
 		Configuration conf = HBaseConfiguration.create();
@@ -120,7 +111,10 @@ public class TwitterMain {
 					TableName.valueOf(TABLE_NAME));
 			tablee.addFamily(new HColumnDescriptor(CF_DETAIL));
 
-			System.out.print("Creating table.... ");
+			//
+			HTableDescriptor hTableHash = new HTableDescriptor(
+					TableName.valueOf(TABLE_NAME_HASH));
+			hTableHash.addFamily(new HColumnDescriptor(CF_HASH));
 
 			if (!admin.tableExists(tablee.getTableName())) {
 				admin.createTable(tablee);
@@ -129,9 +123,17 @@ public class TwitterMain {
 				admin.enableTable(tablee.getTableName());
 			}
 
-			System.out.println(" Done!");
+			if (!admin.tableExists(hTableHash.getTableName())) {
+				admin.createTable(hTableHash);
+			}
+			if (admin.isTableDisabled(hTableHash.getTableName())) {
+				admin.enableTable(hTableHash.getTableName());
+			}
 
 			table = connection.getTable(TableName.valueOf(TABLE_NAME));
+
+			final Table tableHash = connection.getTable(TableName
+					.valueOf(TABLE_NAME_HASH));
 
 			List<Put> lstPut = new ArrayList<Put>();
 
@@ -155,11 +157,56 @@ public class TwitterMain {
 						lstPut.add(put);
 					});
 
-			System.out.println("~~~~~~~~~~~~~~~~~~~~~~~~~~~LstPut.size: "
-					+ lstPut.size());
 			table.put(lstPut);
 
 			table.close();
+
+			javaR.collect().forEach(
+					action -> {
+						String[] arrTags = action._5().split(",");
+
+						for (String tag : arrTags) {
+
+							Get get = new Get(Bytes.toBytes(tag));
+							Get g = get.addColumn(Bytes.toBytes(CF_HASH),
+									Bytes.toBytes("Count"));
+
+							Result result;
+							try {
+								result = tableHash.get(g);
+							} catch (Exception e) {
+								// TODO Auto-generated catch block
+								e.printStackTrace();
+								break;
+							}
+
+							int curCount = 1;
+							if (!result.isEmpty()) {
+
+								byte[] bytArray = result.getValue(
+										Bytes.toBytes(CF_HASH),
+										Bytes.toBytes("Count"));
+								curCount = Integer.valueOf(Bytes
+										.toString(bytArray)) + 1;
+							}
+
+							Put put = new Put(Bytes.toBytes(tag));
+							put.addColumn(Bytes.toBytes(CF_HASH),
+									Bytes.toBytes("Tag"), Bytes.toBytes(tag));
+							put.addColumn(Bytes.toBytes(CF_HASH),
+									Bytes.toBytes("Count"),
+									Bytes.toBytes(curCount + ""));
+							try {
+								tableHash.put(put);
+							} catch (Exception e) {
+								// TODO Auto-generated catch block
+								e.printStackTrace();
+							}
+
+						}
+					});
+
+			tableHash.close();
 
 		} catch (IOException e) {
 			e.printStackTrace();

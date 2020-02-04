@@ -12,18 +12,18 @@ import twitter4j.Status;
 
 import com.hbase.ClntTweet;
 
-public class Utility implements PairFunction<Status, Long, ClntTweet> {
+public class Utility implements PairFunction<Status, String, ClntTweet> {
 	private static final long serialVersionUID = 42l;
 
 	private static final DateFormat DATEFORMAT = new SimpleDateFormat(
 			"yyyy-MM-dd hh:mm:ss");
 
 	@Override
-	public Tuple2<Long, ClntTweet> call(Status status) {
+	public Tuple2<String, ClntTweet> call(Status status) {
 
 		try {
 			if (status != null && status.getText() != null) {
-				long id = status.getId();
+				String id = status.getId() + "";
 				String strDate = DATEFORMAT.format(status.getCreatedAt());
 				String username = status.getUser().getScreenName();
 
@@ -47,9 +47,9 @@ public class Utility implements PairFunction<Status, Long, ClntTweet> {
 				tw.setUsername(username);
 				tw.setCreatedAt(strDate);
 				tw.setTweetContent(text);
-				tw.setHashTags(hashTags.toString());
+				tw.setHashTags(hashTags.substring(0, hashTags.length() - 1));
 
-				return new Tuple2<Long, ClntTweet>(id, tw);
+				return new Tuple2<String, ClntTweet>(id, tw);
 			}
 			return null;
 		} catch (Exception ex) {
